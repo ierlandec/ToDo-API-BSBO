@@ -1,12 +1,15 @@
 # Главный файл приложения
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query
 from typing import List, Dict, Any
 from datetime import datetime
 
 app = FastAPI(
     title="ToDo лист API",
     description="API для управления задачами с использованием матрицы Эйзенхауэра",
-    version="1.0.0"
+    version="1.0.0",
+    contact={
+        "name": "Иван Ефремов"
+    }
 )
 
 # Временное хранилище (позже будет заменено на PostgreSQL)
@@ -52,3 +55,90 @@ tasks_db: List[Dict[str, Any]] = [
         "created_at": datetime.now()
     },
 ]
+
+@app.get("/")
+async def welcome() -> dict:
+    return { "message": "Привет, студент!",
+            "api_title": app.title,
+            "api_description": app.description,
+            "api_version": app.version,
+            "api_author": app.contact["name"]}
+
+
+@app.get("/tasks") 
+async def get_all_tasks() -> dict: 
+    return { 
+        "count": len(tasks_db),  # считает количество записей в хранилище 
+        "tasks": tasks_db # выводит всё, чта есть в хранилище 
+    } 
+ 
+@app.get("/tasks/quadrant/{quadrant}") 
+async def get_tasks_by_quadrant(quadrant: str) -> dict: 
+    if quadrant not in ["Q1", "Q2", "Q3", "Q4"]: 
+        raise HTTPException(    #специальный класс в FastAPI для возврата HTTP ошибок. Не забудьте добавть его вызов в 1 строке 
+            status_code=400, 
+            detail="Неверный квадрант. Используйте: Q1, Q2, Q3, Q4"  #текст, который будет выведен пользователю   
+        ) 
+    
+    filtered_tasks = [ 
+        task                          # ЧТО добавляем в список 
+        for task in tasks_db          # ОТКУДА берем элементы 
+        if task["quadrant"] == quadrant  # УСЛОВИЕ фильтрации 
+    ] 
+    
+    return { 
+        "quadrant": quadrant, 
+        "count": len(filtered_tasks), 
+        "tasks": filtered_tasks 
+}
+
+
+@app.get("/tasks/stats")
+async def get_tasks_stats() -> dict:
+    by_quadrant = {"Q1": 0, "Q2": 0, "Q3": 0, "Q4": 0}
+    by_status = {"completed": 0, "pending": 0}
+
+    for task in tasks_db:
+        by_quadrant[task["quadrant"]] += 1
+        status = "completed" if task["completed"] else "pending"
+        by_status[status] += 1
+
+    return {
+        "total_tasks": len(tasks_db),
+        "by_quadrant": by_quadrant,
+        "by_status": by_status,
+    }
+
+
+@app.get("/tasks/status/{status}")
+async def get_tasks_by_status(status: str) -> dict:
+    if status not in ("completed", "pending"):
+        raise HTTPException(
+            status_code=404,
+            detail="Неизвестный статус. Используйте completed или pending.",
+        )
+
+    is_completed = status == "completed"
+    tasks = [task for task in tasks_db if task["completed"] == is_completed]
+    return {"status": status, "count": len(tasks), "tasks": tasks}
+
+
+@app.get("/tasks/search")
+async def search_tasks(q: str = Query(min_length=2)) -> dict:
+    keyword = q.casefold()
+    tasks = [
+        task
+        for task in tasks_db
+        if keyword in task["title"].casefold()
+        or keyword in (task.get("description") or "").casefold()
+    ]
+    return {"query": q, "count": len(tasks), "tasks": tasks}
+
+
+@app.get("/tasks/{task_id}")
+async def get_task_by_id(task_id: int) -> dict:
+    for task in tasks_db:
+        if task["id"] == task_id:
+            return task
+
+    raise HTTPException(status_code=404, detail="Задача не найдена.")
