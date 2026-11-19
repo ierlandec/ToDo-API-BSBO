@@ -1,93 +1,60 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 
 
-# Базовая схема для Task.
 class TaskBase(BaseModel):
-    title: str = Field(
-        ...,  # троеточие означает "обязательное поле"
-        min_length=3,
-        max_length=100,
-        description="Название задачи",
-    )
-    description: Optional[str] = Field(
-        None,  # None = необязательное поле
-        max_length=500,
-        description="Описание задачи",
-    )
-    is_important: bool = Field(
-        ...,
-        description="Важность задачи",
-    )
-    is_urgent: bool = Field(
-        ...,
-        description="Срочность задачи",
-    )
+    title: str = Field(..., min_length=3, max_length=100, description="Название задачи")
+    description: Optional[str] = Field(None, max_length=500, description="Описание задачи")
+    is_important: bool = Field(..., description="Важность задачи")
+    deadline_at: Optional[date] = Field(None, description="Плановая дата выполнения, YYYY-MM-DD")
 
 
-# Схема для создания новой задачи
-# Наследует все поля от TaskBase
 class TaskCreate(TaskBase):
     pass
 
 
-# Схема для обновления задачи (используется в PUT)
-# Все поля опциональные, т.к. мы можем захотеть обновить только title или status
 class TaskUpdate(BaseModel):
-    title: Optional[str] = Field(
-        None,
-        min_length=3,
-        max_length=100,
-        description="Новое название задачи",
-    )
-    description: Optional[str] = Field(
-        None,
-        max_length=500,
-        description="Новое описание",
-    )
-    is_important: Optional[bool] = Field(
-        None,
-        description="Новая важность",
-    )
-    is_urgent: Optional[bool] = Field(
-        None,
-        description="Новая срочность",
-    )
-    completed: Optional[bool] = Field(
-        None,
-        description="Статус выполнения",
-    )
+    title: Optional[str] = Field(None, min_length=3, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    is_important: Optional[bool] = None
+    deadline_at: Optional[date] = Field(None, description="Новая дата дедлайна, YYYY-MM-DD")
+    completed: Optional[bool] = None
+
+    @field_validator("title", "is_important", "completed")
+    @classmethod
+    def reject_explicit_null(cls, value):
+        # Пропущенные поля остаются без изменений; описание и дедлайн можно очистить.
+        if value is None:
+            raise ValueError("Поле не может быть null")
+        return value
 
 
-# Модель для ответа (TaskResponse)
-# При ответе сервер возвращает полную информацию о задаче,
-# включая сгенерированные поля: id, quadrant, created_at, etc.
 class TaskResponse(TaskBase):
-    id: int = Field(
-        ...,
-        description="Уникальный идентификатор задачи",
-        examples=[1],
-    )
-    quadrant: str = Field(
-        ...,
-        description="Квадрант матрицы Эйзенхауэра (Q1, Q2, Q3, Q4)",
-        examples=["Q1"],
-    )
-    completed: bool = Field(
-        default=False,
-        description="Статус выполнения задачи",
-    )
-    created_at: datetime = Field(
-        ...,
-        description="Дата и время создания задачи",
-    )
+    model_config = ConfigDict(from_attributes=True)
 
-    completed_at: Optional[datetime] = Field(
-        None,
-        description="Дата и время завершения задачи",
-    )
+    id: int
+    deadline_at: Optional[date] = None
+    is_urgent: bool
+    days_remaining: Optional[int] = Field(None, description="Дней до дедлайна; отрицательное число — просрочка")
+    days_until_deadline: Optional[int] = None
+    status_message: str
+    quadrant: str
+    completed: bool = False
+    created_at: datetime
+    completed_at: Optional[datetime] = None
 
-    # Config класс для работы с ORM (понадобится после подключения СУБД)
-    class Config:
-        from_attributes = True
+
+class TaskDeadlineResponse(BaseModel):
+    title: str
+    description: Optional[str] = None
+    created_at: datetime
+    deadline_at: Optional[date] = None
+    days_remaining: Optional[int] = None
+
+
+class TimingStatsResponse(BaseModel):
+    completed_on_time: int = Field(..., description="Завершены в срок")
+    completed_late: int = Field(..., description="Завершены с опозданием")
+    on_plan_pending: int = Field(..., description="Незавершённые, срок не истёк")
+    overtime_pending: int = Field(..., description="Просроченные незавершённые")

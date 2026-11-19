@@ -4,6 +4,7 @@ from database import init_db, get_async_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from routers import tasks, stats
+from scheduler import start_scheduler, update_task_urgency
 
 
 @asynccontextmanager
@@ -13,10 +14,14 @@ async def lifespan(app: FastAPI):
 
     # Создаем таблицы (если их нет)
     await init_db()
+    await update_task_urgency()
+    scheduler = start_scheduler()
     print("Приложение готово к работе!")
-    yield
-
-    print("Остановка приложения...")
+    try:
+        yield
+    finally:
+        scheduler.shutdown(wait=False)
+        print("Остановка приложения...")
 
 
 app = FastAPI(

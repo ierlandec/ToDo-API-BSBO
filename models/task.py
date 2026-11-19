@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, Text
 from sqlalchemy.sql import func
 from database import Base
+from utils import today_moscow, determine_quadrant, calculate_days_until_deadline, calculate_urgency
 
 
 class Task(Base):
@@ -29,11 +30,8 @@ class Task(Base):
         default=False,  # По умолчанию False
     )
 
-    is_urgent = Column(
-        Boolean,
-        nullable=False,
-        default=False,
-    )
+    deadline_at = Column(Date, nullable=True)
+    _is_urgent = Column("is_urgent", Boolean, nullable=True, default=False)
 
     quadrant = Column(
         String(2),  # Максимум 2 символа: "Q1", "Q2", "Q3", "Q4"
@@ -57,8 +55,51 @@ class Task(Base):
         nullable=True,  # NULL пока задача не завершена
     )
 
+    @staticmethod
+    def today():
+        # Сроки считаются по календарным дням московского времени.
+        return today_moscow()
+
+    @property
+    def days_remaining(self):
+        return calculate_days_until_deadline(self.deadline_at, self.today())
+
+    @property
+    def is_urgent(self):
+        return calculate_urgency(self.deadline_at, self.today())
+
+    @is_urgent.setter
+    def is_urgent(self, value):
+        self._is_urgent = value
+
+    @property
+    def calculated_quadrant(self):
+        return determine_quadrant(self.is_important, self.is_urgent)
+
+    def sync_deadline_fields(self):
+        # Записываем расчётные значения в столбцы БД.
+        self._is_urgent = self.is_urgent
+        self.quadrant = self.calculated_quadrant
+
+    @property
+    def status_message(self):
+        if self.deadline_at is None:
+            return "Срок не указан"
+        if self.completed:
+            if self.completed_at is None:
+                return "Задача выполнена"
+            if self.completed_at.date() <= self.deadline_at:
+                return "Задача выполнена в срок"
+            return "Задача выполнена с опозданием"
+        days = self.days_remaining
+        if days < 0:
+            return f"Задача просрочена на {abs(days)} дн."
+        if days == 0:
+            return "Срок выполнения сегодня"
+        return f"До дедлайна осталось дней: {days}"
+
     def __repr__(self) -> str:
-        return f"<Task(id={self.id}, title='{self.title}', quadrant='{self.quadrant}')>"
+        return f"<Task(id={self.id}, title='{self.title}', quadrant='{self.calculated_quadrant}')>"
 
     def to_dict(self) -> dict:
         return {
@@ -67,7 +108,11 @@ class Task(Base):
             "description": self.description,
             "is_important": self.is_important,
             "is_urgent": self.is_urgent,
-            "quadrant": self.quadrant,
+            "deadline_at": self.deadline_at,
+            "days_remaining": self.days_remaining,
+            "days_until_deadline": self.days_remaining,
+            "status_message": self.status_message,
+            "quadrant": self.calculated_quadrant,
             "completed": self.completed,
             "created_at": self.created_at,
             "completed_at": self.completed_at,
