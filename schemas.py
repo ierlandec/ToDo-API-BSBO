@@ -4,7 +4,6 @@ from datetime import datetime
 
 
 # Базовая схема для Task.
-# Все поля, которые есть в нашей "базе данных" tasks_db
 class TaskBase(BaseModel):
     title: str = Field(
         ...,  # троеточие означает "обязательное поле"
