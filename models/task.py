@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, Text
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, Text, ForeignKey
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from database import Base
 from utils import today_moscow, determine_quadrant, calculate_days_until_deadline, calculate_urgency
 
@@ -55,6 +56,18 @@ class Task(Base):
         nullable=True,  # NULL пока задача не завершена
     )
 
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    owner = relationship(
+        "User",
+        back_populates="tasks",
+    )
+
     @staticmethod
     def today():
         # Сроки считаются по календарным дням московского времени.
@@ -104,6 +117,7 @@ class Task(Base):
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "user_id": self.user_id,
             "title": self.title,
             "description": self.description,
             "is_important": self.is_important,
